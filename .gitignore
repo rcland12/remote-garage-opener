@@ -1,0 +1,17 @@
+# Never commit real credentials or the API token.
+firmware/secrets.py
+
+__pycache__/
+*.pyc
+
+# OpenSCAD / slicer scratch
+*.gcode
+enclosure/*.deps
+
+# Local Cloudflare Access service token for tools/verify_remote.sh
+tools/access.env
+
+# Article drafts. Unfinished authoring notes with self-directed prompts and
+# TODO markers in them, which is a different thing from a build guide. Delete
+# these two lines if you would rather version them in public.
+article/
