@@ -1,0 +1,113 @@
+# Garage API, and optionally the Cloudflare Tunnel in front of it.
+#
+#   docker compose up -d                      just the API
+#   docker compose --profile tunnel up -d     API + cloudflared
+#
+# Identical on Linux, macOS and Windows. See README.md.
+#
+# The tunnel is a separate profile because half the ways to reach this thing
+# do not involve Cloudflare at all, and a container that fails to start for
+# want of credentials you were never going to use is just noise.
+
+services:
+  garage-api:
+    container_name: garage-api
+    build: .
+    restart: unless-stopped
+    networks:
+      - garage
+
+    # Where the API listens on the HOST. The default is loopback, which is all
+    # the tunnel needs, because cloudflared reaches the container over the
+    # compose network instead. Override when something else on the LAN or on a
+    # tailnet has to reach it directly:
+    #
+    #   BIND_ADDR=0.0.0.0 docker compose up -d
+    #   BIND_ADDR=100.x.y.z docker compose up -d      # a Tailscale address
+    #
+    # Outbound to the ESP32 works either way; publishing a port has nothing to
+    # do with the container's ability to reach your LAN.
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${BIND_PORT:-8080}:8080"
+
+    env_file: ./garage-api.env
+
+    # Nothing here needs a privilege, a capability, a volume or a host path.
+    # If a change to this service ever seems to need one, that is a reason to
+    # reconsider the change, not the sandbox.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-fsS",
+          "-m",
+          "3",
+          "-o",
+          "/dev/null",
+          "http://127.0.0.1:8080/service/health",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # An outbound-only connection to Cloudflare's edge. No port is opened on the
+  # router and the LAN keeps no inbound holes.
+  cloudflared:
+    container_name: garage-cloudflared
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    depends_on:
+      garage-api:
+        condition: service_healthy
+    networks:
+      - garage
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+      - ./cloudflared/credentials.json:/etc/cloudflared/credentials.json:ro
+    environment:
+      TZ: America/New_York
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "cloudflared",
+          "tunnel",
+          "--config",
+          "/etc/cloudflared/config.yml",
+          "ready",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  garage:
+    driver: bridge

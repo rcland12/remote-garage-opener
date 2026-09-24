@@ -1,0 +1,58 @@
+# Cloudflare Tunnel config. Copy to config.yml and fill in the two ids.
+#
+#   cp config.example.yml config.yml
+#
+# config.yml and credentials.json are both gitignored. credentials.json is
+# written by `cloudflared tunnel create` and is the tunnel's private key: it
+# is enough on its own to serve traffic for your hostname. Treat it like an
+# SSH key.
+
+# From `cloudflared tunnel create garage`, or the Tunnels page in the Zero
+# Trust dashboard. A UUID.
+tunnel: 00000000-0000-0000-0000-000000000000
+
+# Where cloudflared reads that tunnel's key.
+#   docker    /etc/cloudflared/credentials.json, mounted by compose.yml
+#   native    ~/.cloudflared/<tunnel-id>.json on Linux and macOS,
+#             %USERPROFILE%\.cloudflared\<tunnel-id>.json on Windows
+credentials-file: /etc/cloudflared/credentials.json
+
+protocol: quic
+retries: 5
+grace-period: 30s
+no-autoupdate: true
+
+originRequest:
+  connectTimeout: 10s
+  keepAliveTimeout: 90s
+  # The origin is plain HTTP on a machine you own, one hop away. TLS between
+  # cloudflared and it would be a self-signed certificate verifying nothing.
+  noTLSVerify: true
+
+ingress:
+  # /service/health is unauthenticated - it is what the container health check
+  # calls - so it must not be published. Cloudflare Access would gate it like
+  # anything else, but a route that answers before the policy is consulted is
+  # not a route worth having on the internet. 404 it at the edge of the
+  # tunnel, before it reaches the service.
+  - hostname: api.example.com
+    path: ^/service/health
+    service: http_status:404
+
+  # Everything else on the hostname. Access gates it at Cloudflare's edge, and
+  # the service verifies the assertion again on arrival.
+  #
+  # docker:  http://garage-api:8080   (the compose service name)
+  # native:  http://127.0.0.1:8080
+  #
+  # This catch-all sends the whole hostname here, which is right while the
+  # garage is the only thing on api.example.com. If you ever put a second
+  # service on it, add `path: ^/garage` to this rule first - and note that
+  # /service/actions and /service/audit belong to this process too, so they
+  # need a rule of their own or a rename.
+  - hostname: api.example.com
+    service: http://garage-api:8080
+
+  # Required last rule. Anything for another hostname is refused here rather
+  # than reaching the service.
+  - service: http_status:404

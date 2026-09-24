@@ -94,14 +94,42 @@ opening, the lid grip tongue and the looser slide fit. Reprint when convenient.
 
 ## Remote access
 
-Cloudflare Tunnel plus an Access-gated shim on the local server, driven from
-an iPhone Shortcut. The device's own posture is unchanged and must stay that
-way: LAN only, plain HTTP, one shared token, nothing routed to it from
-outside.
+Cloudflare Tunnel plus an Access-gated API, driven from an iPhone Shortcut.
+The device's own posture is unchanged and must stay that way: LAN only, plain
+HTTP, one shared token, nothing routed to it from outside.
 
-The shim holds `API_TOKEN`; the phone holds only Cloudflare service token
+The server holds `API_TOKEN`; the phone holds only Cloudflare service token
 credentials, which are revocable from the dashboard in seconds. Losing the
 phone does not mean reflashing the ESP32.
+
+**That server now lives in this repo, at `server/`.** It was one area of a
+larger multi-purpose endpoint on the owner's own server; the garage part was
+lifted out into a standalone service so the build is complete in one place -
+until now, following this repo got you a controller you could only reach from
+the LAN, with the other half described but not shipped. Decisions made in the
+move:
+
+- **Only the garage area came across.** The original also fronted a passcode
+  endpoint, fail2ban unbans and AI usage counters. None of that belongs here
+  and none of it was copied.
+- **A second auth mode, `AUTH_MODE=token`.** The original assumed Cloudflare
+  Access, which assumes a domain and a Zero Trust account. `docs/remote-access.md`
+  has always listed Tailscale as the recommended option, so the service now
+  accepts a per-client bearer key for the deployments where there is no
+  Cloudflare in the path. `access` is still the default.
+- **No nginx.** Upstream, nginx did the path allowlisting and rate limiting.
+  With five routes and an app that 404s everything else, the allowlist is
+  redundant; the rate limit moved in-process. One less thing to install on
+  whatever machine is going to run this.
+- **Native installs for all three platforms, not just Docker.** Docker
+  Desktop on macOS and Windows starts at login, not at boot, which is the
+  wrong behaviour for a service that has to answer when nobody is home. The
+  systemd unit, the launchd daemon and the Windows scheduled task all start
+  without a session.
+- **`tools/garage.py` and `tools/verify_remote.sh` learned the namespaced
+  paths.** The upstream API puts everything under `/garage/*`; the client was
+  still asking the tunnel for `/status`. `garage.py` also picked up
+  `GARAGE_API_KEY` for token mode and an `actions` command.
 
 `tools/verify_remote.sh` checks that path end to end without moving the door.
 It has one blind spot it reports honestly: the controller's only

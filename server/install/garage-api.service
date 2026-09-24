@@ -1,0 +1,63 @@
+# systemd unit for the garage API, running natively on Linux.
+#
+#   sudo useradd --system --no-create-home --shell /usr/sbin/nologin garage
+#   sudo mkdir -p /opt/garage-api
+#   sudo cp ../app.py ../run.py /opt/garage-api/
+#   sudo cp ../garage-api.env /etc/garage-api.env
+#   sudo chown garage:garage /etc/garage-api.env && sudo chmod 600 /etc/garage-api.env
+#   sudo cp garage-api.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now garage-api
+#
+#   journalctl -u garage-api -f
+#
+# EnvironmentFile rather than run.py's --env, so systemd owns the parsing and
+# `systemctl show garage-api -p Environment` tells the truth about what the
+# process actually got.
+
+[Unit]
+Description=Garage door API
+Documentation=https://github.com/rcland12/remote-garage-opener
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=garage
+Group=garage
+EnvironmentFile=/etc/garage-api.env
+ExecStart=/usr/bin/python3 /opt/garage-api/app.py
+Restart=always
+RestartSec=5s
+
+# A misconfigured unit should not restart forever in a tight loop; the config
+# errors this service exits on are all permanent until someone edits a file.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# The process reads one config file and makes one outbound HTTP call. Nothing
+# below is aspirational - it all holds for what this actually does.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# IPv4 and IPv6 sockets, and nothing else. No unix sockets, no netlink.
+RestrictAddressFamilies=AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

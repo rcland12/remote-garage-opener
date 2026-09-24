@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd job for the garage API, running natively on macOS.
+
+    sudo mkdir -p /opt/garage-api
+    sudo cp ../app.py ../run.py ../garage-api.env /opt/garage-api/
+    sudo chown nobody:nobody /opt/garage-api/garage-api.env
+    sudo chmod 600 /opt/garage-api/garage-api.env
+    sudo cp com.garage.api.plist /Library/LaunchDaemons/
+    sudo chown root:wheel /Library/LaunchDaemons/com.garage.api.plist
+    sudo launchctl load -w /Library/LaunchDaemons/com.garage.api.plist
+
+    tail -f /var/log/garage-api.log
+    sudo launchctl unload -w /Library/LaunchDaemons/com.garage.api.plist
+
+  A LaunchDaemon, not a LaunchAgent, so it runs whether or not anyone is
+  logged in. A laptop with the lid shut and no user session is a perfectly
+  good place for this - which is the whole point of a daemon.
+
+  run.py reads garage-api.env; launchd has no env_file of its own, and putting
+  GARAGE_TOKEN in EnvironmentVariables here would leave it readable in
+  `launchctl print`.
+
+  /usr/bin/python3 is Apple's Command Line Tools python. If it is missing,
+  `xcode-select --install`, or point ProgramArguments at a Homebrew python.
+  Access mode also needs PyJWT in whichever interpreter this names.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.garage.api</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/opt/garage-api/run.py</string>
+        <string>--env</string>
+        <string>/opt/garage-api/garage-api.env</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/opt/garage-api</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/var/log/garage-api.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/garage-api.log</string>
+
+    <!-- Nothing here needs to run as root. -->
+    <key>UserName</key>
+    <string>nobody</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

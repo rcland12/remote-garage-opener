@@ -15,3 +15,11 @@ tools/access.env
 # TODO markers in them, which is a different thing from a build guide. Delete
 # these two lines if you would rather version them in public.
 article/
+
+# Server configuration and tunnel credentials. garage-api.env holds
+# GARAGE_TOKEN, which is the key to the door; credentials.json is the
+# tunnel's private key and is enough on its own to serve your hostname.
+server/garage-api.env
+server/cloudflared/config.yml
+server/cloudflared/credentials.json
+server/*.log

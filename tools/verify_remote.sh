@@ -4,13 +4,13 @@
 #   ./verify_remote.sh
 #   CF_ACCESS_CLIENT_ID=... CF_ACCESS_CLIENT_SECRET=... ./verify_remote.sh
 #
-# Run it after the Zero Trust dashboard steps in the server repo's
-# garage/README.md. Without service token credentials it checks that the
+# Run it after the Zero Trust dashboard steps in server/README.md. Without
+# service token credentials it checks that the
 # hostname exists and that Access is actually guarding it, which is the part
 # that matters most. With credentials it also checks that the whole path works
 # end to end.
 #
-# It never sends POST /toggle. The door does not move.
+# It never sends POST /garage/toggle. The door does not move.
 
 set -u
 
@@ -118,7 +118,7 @@ esac
 
 # --- 2. Access is actually in front -----------------------------------------
 
-hdrs=$(curl -sS -m 20 -o /dev/null -D- "https://$HOST/status" 2>/dev/null)
+hdrs=$(curl -sS -m 20 -o /dev/null -D- "https://$HOST/garage/status" 2>/dev/null)
 code=$(printf '%s' "$hdrs" | awk '/^HTTP/{c=$2} END{print c}')
 location=$(printf '%s' "$hdrs" | awk 'BEGIN{IGNORECASE=1} /^location:/{print $2}' | tr -d '\r')
 
@@ -162,7 +162,7 @@ esac
 #
 # The redirect carries a signed meta JWT whose aud claim is the application's
 # Audience tag. Reading it here saves copying it out of the dashboard, and
-# proves the value you put in garage.env belongs to this hostname.
+# proves the value you put in garage-api.env belongs to this hostname.
 
 if [ -n "$location" ]; then
   aud=$(printf '%s' "$location" | python3 -c '
@@ -181,7 +181,7 @@ except Exception:
   if [ -n "$aud" ]; then
     ok "Access: application audience (AUD) tag for $HOST is"
     note "$aud"
-    note "That is the value for ACCESS_AUD in garage/garage.env."
+    note "That is the value for ACCESS_AUD in server/garage-api.env."
   fi
 fi
 
@@ -199,15 +199,15 @@ fi
 
 auth=(-H "CF-Access-Client-Id: $ID" -H "CF-Access-Client-Secret: $SECRET")
 
-out=$(curl -sS -m 20 -w '\n%{http_code}' "${auth[@]}" "https://$HOST/status" 2>&1)
+out=$(curl -sS -m 20 -w '\n%{http_code}' "${auth[@]}" "https://$HOST/garage/status" 2>&1)
 code=$(printf '%s' "$out" | tail -n1)
 body=$(printf '%s' "$out" | sed '$d')
 case "$code" in
-  200) ok "service token: GET /status -> 200"; note "$body" ;;
+  200) ok "service token: GET /garage/status -> 200"; note "$body" ;;
   302)
     bad "service token: still bounced to the login page"
     note "The policy action is almost certainly Allow. It must be Service Auth."
-    note "Zero Trust > Access > Applications > garage > Policies: create a"
+    note "Zero Trust > Access > Applications > your app > Policies: create a"
     note "policy with action Service Auth and include Service Token > your token." ;;
   403)
     bad "service token: 403 - the token is not permitted by any policy"
@@ -221,30 +221,31 @@ case "$code" in
     if [ -z "$body" ]; then
       bad "service token: authenticated, but the tunnel has no route for $HOST"
       note "The service token works. The origin side is not deployed yet:"
-      note "  docker compose up -d garage"
-      note "  docker compose build nginx && docker compose up -d nginx"
-      note "  docker compose restart cloudflared"
-      note "cloudflared only reads config.yml at startup, so a restart is"
-      note "required even though the ingress entry is already in the file."
+      note "  cd server && docker compose --profile tunnel up -d --build"
+      note "cloudflared only reads config.yml at startup, so restart it even"
+      note "when the ingress entry is already in the file."
     else
-      bad "service token: 404 from nginx"
+      bad "service token: 404 from the origin"
       note "$body"
+      note "Every path is namespaced: /garage/status, not /status."
     fi ;;
-  *)  bad "service token: GET /status -> $code"; note "$body" ;;
+  *)  bad "service token: GET /garage/status -> $code"; note "$body" ;;
 esac
 
 # Full dress rehearsal, still without moving the door.
-out=$(curl -sS -m 20 -w '\n%{http_code}' -X POST "${auth[@]}" "https://$HOST/selftest" 2>&1)
+out=$(curl -sS -m 20 -w '\n%{http_code}' -X POST "${auth[@]}" "https://$HOST/garage/selftest" 2>&1)
 code=$(printf '%s' "$out" | tail -n1)
 body=$(printf '%s' "$out" | sed '$d')
 case "$code" in
   200)
-    ok "service token: POST /selftest -> 200 (whole path good, door untouched)"
+    ok "service token: POST /garage/selftest -> 200 (whole path good, door untouched)"
     note "$body" ;;
   502)
-    bad "the shim could not reach the controller on the LAN"
-    note "docker compose logs garage; check the device is powered and on wifi." ;;
-  *)  bad "service token: POST /selftest -> $code"; note "$body" ;;
+    bad "the server could not reach the controller on the LAN"
+    note "cd server && docker compose logs garage-api - or journalctl -u"
+    note "garage-api. Check the device is powered and on wifi, and that"
+    note "GARAGE_HOST in garage-api.env is its current address." ;;
+  *)  bad "service token: POST /garage/selftest -> $code"; note "$body" ;;
 esac
 
 echo
@@ -256,6 +257,6 @@ if [ "$FAIL" -eq 0 ]; then
   echo "token-checked endpoint is the one that pulses the relay. If you have"
   echo "just rotated it, the first /toggle is the test."
   echo
-  echo "A POST to /toggle would now open or close the door. Camera first."
+  echo "A POST to /garage/toggle would now open or close the door. Camera first."
 fi
 [ "$FAIL" -eq 0 ]
